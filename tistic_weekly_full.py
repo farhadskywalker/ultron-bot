@@ -3,7 +3,7 @@
 import sqlite3
 import datetime
 import jdatetime
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont,ImageOps
 
 DB = "market_data.db"
 FONT = "IRANSansX-Regular.ttf"
@@ -60,6 +60,7 @@ def get_weekly_rows():
 def build_week_table():
     rows, start, end = get_weekly_rows()
 
+    # ستون‌ها — به ترتیب هفته
     week_days = ["Sat", "Sun", "Mon", "Tue", "Wed"]
 
     table = {}
@@ -68,23 +69,34 @@ def build_week_table():
         dt = datetime.date.fromisoformat(date)
         day_name = dt.strftime("%a")
 
-        flow = float(flow)
-
         if market not in table:
             table[market] = {d: "-" for d in week_days}
-            table[market]["total"] = 0
+            table[market]["total"] = 0.0
 
-        table[market][day_name] = f"{flow:.1f} B"
-        table[market]["total"] += flow
+        # ذخیره مقدار هر روز
+        table[market][day_name] = f"{float(flow):.1f} B"
 
+        # جمع هفتگی
+        table[market]["total"] += float(flow)
+
+    # ساخت آرایه نهایی (راست به چپ)
     final_rows = []
 
     for market, vals in table.items():
         final_rows.append(
-            [market] + [vals[d] for d in week_days] + [f"{vals['total']:.1f} B"]
+            [
+                market,
+                vals["Sat"],
+                vals["Sun"],
+                vals["Mon"],
+                vals["Tue"],
+                vals["Wed"],
+                f"{vals['total']:.1f} B"
+            ]
         )
 
     return final_rows, start, end
+
 
 
 
@@ -94,103 +106,99 @@ def build_week_table():
 # ---------------------
 
 def generate_weekly_report_image(weekly_rows, start_date, end_date):
-    from PIL import Image, ImageDraw, ImageFont
+    from bidi.algorithm import get_display
+    import arabic_reshaper
+    from khayyam import JalaliDatetime
 
-    padding = 20
-    row_height = 60
+    width = 1400
+    row_height = 95
+    padding = 40
+    header_bg = (230, 230, 230)
+    positive_bg = (230, 255, 230)
+    negative_bg = (255, 230, 230)
+    neutral_bg  = (230, 240, 255)
+    text_color = (30, 30, 30)
+
+    font = ImageFont.truetype("IRANSansX-Regular.ttf", 34)
+    font_bold = ImageFont.truetype("IRANSansX-Bold.ttf", 38)
 
     headers = [
         "بازار",
         "شنبه",
         "یکشنبه",
         "دوشنبه",
-        "سه‌شنبه",
+        "سه‌شنبه", 
         "چهارشنبه",
         "جمع هفته"
     ]
 
-    width = 1300
-    height = padding*2 + row_height * (len(weekly_rows)+2)
+    col_widths = [280, 160, 160, 160, 160, 160, 200]
 
-    img = Image.new("RGB", (width, height), (240, 248, 255))
+    height = padding*2 + row_height * (len(weekly_rows)+1)
+
+    img = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(img)
 
-    try:
-        font = ImageFont.truetype("/mnt/data/IRANSansX-Regular.ttf", 26)
-        small = ImageFont.truetype("/mnt/data/IRANSansX-Regular.ttf", 22)
-    except:
-        font = small = ImageFont.load_default()
-
-    # هدر خاکستری
-    draw.rectangle([(padding, padding),
-                    (width-padding, padding+row_height)],
-                   fill=(210, 210, 210))
-
-    col_w = (width - padding*2) // len(headers)
+    # هدر
+    y = padding
+    x = padding
 
     for i, h in enumerate(headers):
-        draw.text(
-            (padding + i*col_w + 10, padding+10),
-            h, font=font, fill=(30, 30, 30)
-        )
+        txt = get_display(arabic_reshaper.reshape(h))
+        draw.rectangle([(x, y), (x+col_widths[i], y+row_height)], fill=header_bg)
+        draw.text((x+10, y+25), txt, fill=text_color, font=font_bold)
+        x += col_widths[i]
+
+    y += row_height
 
     # ردیف‌ها
-    y = padding + row_height
+    for row in weekly_rows:
+        x = padding
 
-    for market, sat, sun, mon, tue, wed, total in weekly_rows:
+        for i, cell in enumerate(row):
 
-        y += 2
-        draw.rectangle([(padding, y),
-                        (width-padding, y+row_height)],
-                       fill=(255, 255, 255))
+            bg = neutral_bg
 
-        cols = [market, sat, sun, mon, tue, wed, total]
+            if i >= 1:     # ستون‌های عددی
+                if str(cell).startswith("-"):
+                    bg = negative_bg
+                elif cell != "-":
+                    bg = positive_bg
 
-        for i, val in enumerate(cols):
+            draw.rectangle([(x, y), (x+col_widths[i], y+row_height)], fill=bg)
 
-            # رنگ مثبت/منفی
-            if i > 0 and val not in ("-", ""):
-                v = float(str(val).replace("B", "").replace(",", ""))
-                if v > 0:
-                    bg = (210, 255, 210)
-                else:
-                    bg = (255, 210, 210)
-                draw.rectangle(
-                    [(padding + i*col_w,
-                      y),
-                     (padding + (i+1)*col_w,
-                      y+row_height)],
-                    fill=bg
-                )
+            txt = get_display(arabic_reshaper.reshape(str(cell)))
+            draw.text((x+10, y+25), txt, fill=text_color, font=font)
 
-            draw.text(
-                (padding + i*col_w + 10, y+12),
-                str(val), font=font, fill=(0, 0, 0)
-            )
+            x += col_widths[i]
 
         y += row_height
 
-    # 🔹 مرز سیاه کلفت
-    border_width = 25
-    draw.rectangle(
-        [(0, 0), (width-1, height-1)],
-        outline=(0, 0, 0),
-        width=border_width
-    )
+    # قاب سیاه دور عکس
+    border_width = 22
+    bordered = ImageOps.expand(img, border=border_width, fill="black")
+    draw2 = ImageDraw.Draw(bordered)
 
-    # 🔹 متن پایین تصویر + تاریخ شمسی
-    text = f"گزارش هفتگی — از {start_date} تا {end_date}"
-    draw.text(
-        (padding, height-50),
-        text,
+    # متن پایین — تاریخ شمسی
+    start_j = JalaliDatetime.strptime(start_date, "%Y-%m-%d").strftime("%Y/%m/%d")
+    end_j   = JalaliDatetime.strptime(end_date, "%Y-%m-%d").strftime("%Y/%m/%d")
+
+    caption = f"گزارش هفتگی بازار — بازه: {start_j} تا {end_j}"
+
+    caption = get_display(arabic_reshaper.reshape(caption))
+
+    draw2.text(
+        (padding, bordered.height - 55),
+        caption,
         fill=(255, 255, 255),
-        font=small
+        font=font
     )
 
-    out = "weekly_report.png"
-    img.save(out)
-    return out
+    bordered.save("weekly_report.png")
+    return "weekly_report.png"
+
+
 
 weekly_rows, start_date, end_date = build_week_table()
-
 path = generate_weekly_report_image(weekly_rows, start_date, end_date)
+print("DONE:", path)
