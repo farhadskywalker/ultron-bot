@@ -297,8 +297,8 @@ def generate_market_table_image(rows):
     final_img.paste(img, (border_width, border_width))
     draw = ImageDraw.Draw(final_img)
 
-    
-    custom_text = "Produced by farhad [ultronbot]"
+    now = time.strftime("%Y/%m/%d - %H:%M", time.localtime())
+    custom_text = "Produced by farhad [ultronbot]⏱ report time\n{now}"
     text_x = border_width + 10
     text_y = border_width + img.height + 20   # درست زیر تصویر و روی پس‌زمینه سیاه
 
@@ -360,27 +360,7 @@ def format_weekly_report(rows, start_date, end_date):
     return report
 
 
-def weekly_to_table_rows(weekly_data):
-    rows = []
 
-    for market, money, power in weekly_data:
-        rows.append([
-            market,
-            "-",                 # حجم (هفتگی نداریم)
-            "-",                 # ارزش
-            "-",                 # سرانه خرید
-            "-",                 # سرانه فروش
-            f"{power:.2f}",      # قدرت خرید
-            f"{money:.1f} B"     # ورود پول
-        ])
-
-    return rows
-
-def generate_weekly_report_image(start_date, end_date):
-    weekly = load_weekly_report()   # ✅ این خط اصلاح شد
-    rows = weekly_to_table_rows(weekly)
-    image_path = generate_market_table_image(rows)
-    return image_path
 
 
 
@@ -394,13 +374,7 @@ if __name__ == "__main__":
     start_date = "2025-12-15"
     end_date = "2025-12-19"
 
-    weekly_img = generate_weekly_report_image(start_date, end_date)
-    with open(weekly_img, "rb") as f:
-        requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-        data={"chat_id": CHAT_ID},
-        files={"photo": f}
-    )
+    
 
 
     weekly = load_weekly_report()
@@ -439,46 +413,14 @@ def send_photo(image_path, caption=None):
             }
         )
 
-def handle_command(text):
-    if text == "/now":
-        table = extract_table()
-        save_to_db(table)
-        img = generate_market_table_image(table)
-        send_photo(img, "📊 گزارش لحظه‌ای بازار")
-        msg = format_report(table)
-        send(msg)
 
-    elif text == "/weekly":
-        start, end = get_current_week_range()
-        img = generate_weekly_report_image(start, end)
-        send_photo(img, "📈 گزارش هفتگی بازار")
+   
+        
 
-    elif text == "/help":
-        send_message(
-            "📌 دستورات ربات:\n"
-            "/now - گزارش لحظه‌ای\n"
-            "/weekly - گزارش هفتگی\n"
-            "/monthly - گزارش ماهانه (به‌زودی)"
-        )
-
-def listen():
-    offset = None
-    while True:
-        r = requests.get(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
-            params={"offset": offset, "timeout": 30}
-        ).json()
-
-        for update in r.get("result", []):
-            offset = update["update_id"] + 1
-
-            if "message" in update and "text" in update["message"]:
-                text = update["message"]["text"].strip()
-                handle_command(text)
 
 if __name__ == "__main__":
-    print("🤖 Bot is running and waiting for commands...")
-    listen()
+    print("🤖 Bot is running ...")
+    
 
 print("DONE")
 
